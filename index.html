@@ -1,1 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>ShiftLog — Al Safadi DIFC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1C1E1B;
+    --panel:#262A24;
+    --panel-hi:#2F342C;
+    --line:#3B4038;
+    --parchment:#EDE6D3;
+    --parchment-dim:#B9B2A0;
+    --brass:#C08A3E;
+    --brass-hi:#D9A75A;
+    --spice:#B4432E;
+    --olive:#8A9670;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--ink); color:var(--parchment); font-family:'Work Sans',sans-serif;
+    min-height:100vh; padding:18px 14px 50px;
+  }
+  .wrap{max-width:640px;margin:0 auto;}
 
+  header{
+    display:flex; align-items:baseline; justify-content:space-between;
+    margin-bottom:16px; padding-bottom:14px; border-bottom:1px solid var(--line);
+  }
+  .eyebrow{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--brass-hi); font-weight:600; margin:0 0 4px; }
+  h1{ font-family:'Fraunces',serif; font-weight:700; font-size:28px; margin:0; }
+  .clock{ font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--parchment-dim); text-align:right; }
+
+  .stat-row{ display:flex; gap:8px; margin-bottom:16px; }
+  .pill-stat{
+    flex:1; background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:10px 12px; text-align:center;
+  }
+  .pill-stat .n{ font-family:'Fraunces',serif; font-size:22px; font-weight:700; }
+  .pill-stat .l{ font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--parchment-dim); }
+  .n.absent{ color:var(--spice); }
+  .n.break{ color:var(--brass-hi); }
+  .n.present{ color:var(--olive); }
+
+  input[type=text]{
+    width:100%; background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:11px 14px; color:var(--parchment); font-family:'Work Sans',sans-serif; font-size:14px;
+  }
+  input[type=text]:focus{ outline:2px solid var(--brass); outline-offset:1px; }
+  #search{ margin-bottom:14px; }
+
+  .staff-row{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:10px 12px; display:flex; align-items:center; gap:8px; margin-bottom:8px;
+  }
+  .staff-row.absent{ border-color:var(--spice); background:linear-gradient(180deg,#2E1E19,#262A24); }
+  .staff-row.onbreak{ border-color:var(--brass); }
+
+  .name-wrap{ flex:1; min-width:0; }
+  .staff-name{
+    font-weight:600; font-size:14.5px; background:none; border:none; color:var(--parchment);
+    font-family:'Work Sans',sans-serif; width:100%; padding:2px 0;
+  }
+  .staff-name:focus{ outline:none; border-bottom:1px solid var(--brass); }
+  .break-timer{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--brass-hi); margin-top:1px; }
+
+  .btn{
+    border:none; border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600;
+    cursor:pointer; white-space:nowrap; flex:none;
+  }
+  .btn-absent{ background:var(--panel-hi); border:1px solid var(--line); color:var(--parchment-dim); }
+  .btn-absent.active{ background:var(--spice); color:#2A0D08; border-color:var(--spice); }
+  .btn-break{ background:var(--panel-hi); border:1px solid var(--line); color:var(--parchment-dim); }
+  .btn-break.active{ background:var(--brass); color:var(--ink); border-color:var(--brass); }
+  .btn-remove{ background:none; border:none; color:var(--spice); font-size:18px; cursor:pointer; padding:0 2px; line-height:1; }
+
+  .section-label{
+    font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--parchment-dim);
+    margin:22px 0 10px; display:flex; align-items:center; gap:8px;
+  }
+  .section-label::after{ content:''; flex:1; height:1px; background:var(--line); }
+
+  .add-row{ display:flex; gap:8px; }
+  button.brass{
+    background:var(--brass); color:var(--ink); border:none; border-radius:10px;
+    padding:10px 16px; font-weight:600; font-size:14px; cursor:pointer; flex:none;
+  }
+
+  .empty-note{ color:var(--parchment-dim); font-size:13px; padding:10px 2px; }
+
+  .toast{
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    background:var(--panel-hi); border:1px solid var(--brass); color:var(--parchment);
+    padding:10px 18px; border-radius:10px; font-size:13px; opacity:0; pointer-events:none; transition:opacity .25s;
+  }
+  .toast.show{ opacity:1; }
+
+  .config-notice{
+    background:var(--panel); border:1px dashed var(--spice); border-radius:var(--radius);
+    padding:14px; font-size:13px; color:var(--parchment-dim); margin-bottom:16px; line-height:1.5;
+  }
+  .config-notice code{ color:var(--brass-hi); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <p class="eyebrow">Al Safadi — DIFC</p>
+      <h1>ShiftLog</h1>
+    </div>
+    <div class="clock" id="clock"></div>
+  </header>
+
+  <div id="configNotice" class="config-notice" style="display:none">
+    Set your Apps Script URL in <code>API_URL</code> near the top of the script before this works.
+  </div>
+
+  <div class="stat-row">
+    <div class="pill-stat"><div class="n present" id="statPresent">–</div><div class="l">Present</div></div>
+    <div class="pill-stat"><div class="n absent" id="statAbsent">–</div><div class="l">Absent</div></div>
+    <div class="pill-stat"><div class="n break" id="statBreak">–</div><div class="l">On break</div></div>
+  </div>
+
+  <input type="text" id="search" placeholder="Search staff…" oninput="renderStaff()">
+
+  <div id="staffList"></div>
+
+  <div class="section-label">Add staff</div>
+  <div class="add-row">
+    <input type="text" id="newStaffName" placeholder="Staff name">
+    <button class="brass" onclick="handleAddStaff()">Add</button>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ==== CONFIG ====
+const API_URL = "https://script.google.com/macros/s/AKfycbwUez5XDeFcxEjJOmIaZAVpXabfj3PoPpmonHLrVEIdy8CE7i2YMT6zMyAO0A63GY41zw/exec";
+// ================
+
+let staff = [];
+let absentSet = new Set();
+let openBreaks = {};
+const busy = new Set();
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(()=>t.classList.remove('show'), 2000);
+}
+
+function updateClock(){
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString([], {
+      hour:'2-digit', minute:'2-digit', second:'2-digit'
+    });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+async function api(action, params={}){
+  const url = new URL(API_URL);
+  url.searchParams.set('action', action);
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
+  url.searchParams.set('_ts', Date.now());
+
+  const res = await fetch(url.toString(), {
+    method: 'GET',
+    cache: 'no-store'
+  });
+
+  if (!res.ok) throw new Error('Network error: ' + res.status);
+  return res.json();
+}
+
+function safeTimeParts(value){
+  if (typeof value !== 'string') return null;
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return null;
+
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  const s = Number(match[3] || 0);
+
+  if (!Number.isFinite(h) || !Number.isFinite(m) || !Number.isFinite(s) ||
+      h < 0 || h > 23 || m < 0 || m > 59 || s < 0 || s > 59) return null;
+
+  return [h,m,s];
+}
+
+function secsSince(hhmmss){
+  const parts = safeTimeParts(hhmmss);
+  if (!parts) return 0;
+
+  const [h,m,s] = parts;
+  const start = new Date();
+  start.setHours(h,m,s,0);
+
+  let elapsed = Math.floor((Date.now() - start.getTime()) / 1000);
+  if (!Number.isFinite(elapsed) || elapsed < 0) elapsed = 0;
+  return elapsed;
+}
+
+function fmtDuration(totalSec){
+  totalSec = Math.max(0, Number(totalSec) || 0);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return m + ':' + String(s).padStart(2,'0');
+}
+
+function renderStats(){
+  const total = staff.length;
+  const absentCount = absentSet.size;
+  const breakCount = Object.keys(openBreaks).length;
+
+  document.getElementById('statPresent').textContent =
+    Math.max(0, total - absentCount);
+  document.getElementById('statAbsent').textContent = absentCount;
+  document.getElementById('statBreak').textContent = breakCount;
+}
+
+function renderStaff(){
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const holder = document.getElementById('staffList');
+  const filtered = staff.filter(n => String(n).toLowerCase().includes(q));
+
+  if (!filtered.length){
+    holder.innerHTML =
+      '<div class="empty-note">No staff match — try a different search, or add someone below.</div>';
+    return;
+  }
+
+  holder.innerHTML = filtered.map(name => {
+    const isAbsent = absentSet.has(name);
+    const onBreak = !!openBreaks[name];
+
+    let timerHtml = '';
+    if (onBreak){
+      timerHtml =
+        `<div class="break-timer">On break · ${fmtDuration(secsSince(openBreaks[name]))}</div>`;
+    }
+
+    const escaped = escapeAttr(name);
+
+    return `<div class="staff-row ${isAbsent?'absent':''} ${onBreak?'onbreak':''}">
+      <div class="name-wrap">
+        <input class="staff-name" value="${escaped}"
+          onchange="handleRename('${escaped}', this.value)">
+        ${timerHtml}
+      </div>
+      <button class="btn btn-absent ${isAbsent?'active':''}"
+        onclick="handleToggleAbsent('${escaped}')">
+        ${isAbsent ? 'Absent' : 'Mark absent'}
+      </button>
+      <button class="btn btn-break ${onBreak?'active':''}"
+        onclick="handleToggleBreak('${escaped}')">
+        ${onBreak ? 'End break' : 'Start break'}
+      </button>
+      <button class="btn-remove"
+        onclick="handleRemoveStaff('${escaped}')"
+        title="Remove">×</button>
+    </div>`;
+  }).join('');
+}
+
+async function refreshAll(showError = true){
+  try {
+    const [staffList, absentList, breaks] = await Promise.all([
+      api('getStaff'),
+      api('getAbsent'),
+      api('getOpenBreaks')
+    ]);
+
+    staff = Array.isArray(staffList) ? staffList : [];
+    absentSet = new Set(Array.isArray(absentList) ? absentList : []);
+    openBreaks = (breaks && !breaks.error) ? breaks : {};
+
+    renderStats();
+    renderStaff();
+  } catch (err) {
+    if (showError) toast(err.message || 'Connection error');
+  }
+}
+
+// Background sync once per minute instead of every 15 seconds.
+setInterval(() => refreshAll(false), 60000);
+
+async function handleToggleAbsent(name){
+  const key = 'absent:' + name;
+  if (busy.has(key)) return;
+  busy.add(key);
+
+  try {
+    const r = await api('toggleAbsent', {staff:name});
+    if (r.error){ toast(r.error); return; }
+
+    if (r.absent) absentSet.add(name);
+    else absentSet.delete(name);
+
+    renderStats();
+    renderStaff();
+    toast(name + (r.absent ? ' marked absent' : ' marked present'));
+  } catch (err) {
+    toast(err.message || 'Connection error');
+  } finally {
+    busy.delete(key);
+  }
+}
+
+async function handleToggleBreak(name){
+  const key = 'break:' + name;
+  if (busy.has(key)) return;
+  busy.add(key);
+
+  try {
+    if (openBreaks[name]) {
+      const r = await api('endBreak', {staff:name});
+      if (r.error){ toast(r.error); return; }
+
+      delete openBreaks[name];
+      renderStats();
+      renderStaff();
+
+      toast(name + ' back (' + (Number(r.durationMinutes) || 0) + ' min)');
+    } else {
+      const r = await api('startBreak', {staff:name});
+      if (r.error){ toast(r.error); return; }
+
+      openBreaks[name] = r.startTime ||
+        new Date().toTimeString().slice(0,8);
+
+      renderStats();
+      renderStaff();
+      toast(name + ' started break');
+    }
+  } catch (err) {
+    toast(err.message || 'Connection error');
+  } finally {
+    busy.delete(key);
+  }
+}
+
+async function handleAddStaff(){
+  const input = document.getElementById('newStaffName');
+  const name = input.value.trim();
+  if (!name || busy.has('addStaff')) return;
+
+  busy.add('addStaff');
+  try {
+    if (staff.some(n => String(n).toLowerCase() === name.toLowerCase())){
+      toast('Staff already exists');
+      return;
+    }
+
+    const r = await api('addStaff', {name});
+    if (r.error){ toast(r.error); return; }
+
+    staff.push(name);
+    staff.sort((a,b) => String(a).localeCompare(String(b)));
+    input.value = '';
+
+    renderStats();
+    renderStaff();
+    toast('Added ' + name);
+  } catch (err) {
+    toast(err.message || 'Connection error');
+  } finally {
+    busy.delete('addStaff');
+  }
+}
+
+async function handleRemoveStaff(name){
+  if (!confirm('Remove ' + name + ' from the staff list?')) return;
+
+  const key = 'remove:' + name;
+  if (busy.has(key)) return;
+  busy.add(key);
+
+  try {
+    const r = await api('removeStaff', {name});
+    if (r.error){ toast(r.error); return; }
+
+    staff = staff.filter(n => n !== name);
+    absentSet.delete(name);
+    delete openBreaks[name];
+
+    renderStats();
+    renderStaff();
+    toast('Removed ' + name);
+  } catch (err) {
+    toast(err.message || 'Connection error');
+  } finally {
+    busy.delete(key);
+  }
+}
+
+async function handleRename(oldName, newName){
+  newName = newName.trim();
+
+  if (!newName || newName === oldName){
+    renderStaff();
+    return;
+  }
+
+  const key = 'rename:' + oldName;
+  if (busy.has(key)) return;
+  busy.add(key);
+
+  try {
+    if (staff.some(n =>
+      n !== oldName &&
+      String(n).toLowerCase() === newName.toLowerCase()
+    )){
+      toast('Staff name already exists');
+      renderStaff();
+      return;
+    }
+
+    const r = await api('renameStaff', {oldName, newName});
+    if (r.error){ toast(r.error); return; }
+
+    staff = staff.map(n => n === oldName ? newName : n);
+
+    if (absentSet.has(oldName)){
+      absentSet.delete(oldName);
+      absentSet.add(newName);
+    }
+
+    if (openBreaks[oldName]){
+      openBreaks[newName] = openBreaks[oldName];
+      delete openBreaks[oldName];
+    }
+
+    renderStats();
+    renderStaff();
+    toast('Renamed to ' + newName);
+  } catch (err) {
+    toast(err.message || 'Connection error');
+  } finally {
+    busy.delete(key);
+  }
+}
+
+function escapeAttr(s){
+  return String(s)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Local timer only — no Google request every second.
+setInterval(() => {
+  if (Object.keys(openBreaks).length) renderStaff();
+}, 1000);
+
+if (API_URL.indexOf('PASTE_YOUR') !== -1){
+  document.getElementById('configNotice').style.display = 'block';
+} else {
+  refreshAll();
+}
+</script>
+</body>
+</html>
