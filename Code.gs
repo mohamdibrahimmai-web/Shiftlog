@@ -201,9 +201,10 @@ function endBreak(staff) {
       const open = rows[i][3] === '' || rows[i][3] === null || rows[i][3] === undefined;
       if (normDate(rows[i][0]) !== today || String(rows[i][1] || '').trim() !== staff || !open) continue;
       const start = parseBreakTime(rows[i][2]);
-      if (!start) throw new Error('Invalid break start time for ' + staff);
       const now = new Date();
-      const duration = Math.max(0, Math.round((now.getTime() - start.getTime()) / 60000));
+      const duration = start
+        ? Math.max(0, Math.round((now.getTime() - start.getTime()) / 60000))
+        : 0;
       const endTime = Utilities.formatDate(now, Session.getScriptTimeZone(), 'HH:mm:ss');
       sheet.getRange(i + 1, 4, 1, 2).setValues([[endTime, duration]]);
       return { ok: true, durationMinutes: duration, startTime: String(rows[i][2]) };
