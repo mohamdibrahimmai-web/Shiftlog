@@ -267,8 +267,11 @@ function safeTimeParts(value){
 function secsSince(v){
   const p=safeTimeParts(v);
   if(!p)return 0;
-  const d=new Date(); d.setHours(p[0],p[1],p[2],0);
-  return Math.max(0,Math.floor((Date.now()-d.getTime())/1000));
+  const now=new Date();
+  const start=new Date();
+  start.setHours(p[0],p[1],p[2],0);
+  if(start.getTime()>now.getTime())start.setDate(start.getDate()-1);
+  return Math.max(0,Math.floor((now.getTime()-start.getTime())/1000));
 }
 function fmtDuration(sec){
   sec=Math.max(0,Number(sec)||0);
@@ -361,7 +364,7 @@ async function handleToggleBreak(name){
     }else{
       const r=await api('startBreak',{staff:name});
       if(r.error){toast(r.error);return;}
-      openBreaks[name]=r.startTime||new Date().toTimeString().slice(0,8);
+     openBreaks[name]=new Date().toTimeString().slice(0,8); new Date().toTimeString().slice(0,8);
       renderStats();renderStaff();toast(name+' started break');
     }
   }catch(e){toast(e.message||'Connection error')}
