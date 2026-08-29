@@ -213,8 +213,21 @@ function endBreak(staff) {
 }
 
 function parseBreakTime(value) {
+  if (value instanceof Date) {
+    return parseBreakTime(
+      Utilities.formatDate(value, Session.getScriptTimeZone(), 'HH:mm:ss')
+    );
+  }
+
   const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (!match) return null;
+  if (!match) {
+    const parsed = new Date(value);
+    if (isNaN(parsed.getTime())) return null;
+    return parseBreakTime(
+      Utilities.formatDate(parsed, Session.getScriptTimeZone(), 'HH:mm:ss')
+    );
+  }
+
   const hours = Number(match[1]);
   const minutes = Number(match[2]);
   const seconds = Number(match[3] || 0);
