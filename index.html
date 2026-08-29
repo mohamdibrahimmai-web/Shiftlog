@@ -114,6 +114,14 @@
   .refresh-btn.loading{opacity:.55;pointer-events:none}
   .btn:disabled,.btn-remove:disabled{opacity:.5;pointer-events:none}
   .last-refresh{font-size:10px;color:var(--parchment-dim);text-align:right;margin:-7px 2px 10px}
+  .login-screen{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(17,24,39,.48)}
+  .login-card{width:min(360px,100%);background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:24px;box-shadow:0 18px 50px rgba(15,23,42,.25)}
+  .login-card h2{font-family:'Fraunces',serif;font-size:24px;margin:0 0 6px}
+  .login-card p{font-size:13px;color:var(--parchment-dim);margin:0 0 16px;line-height:1.45}
+  .login-card input{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 14px;color:var(--parchment);font:14px 'Work Sans',sans-serif;margin-bottom:10px}
+  .login-card input:focus{outline:2px solid var(--brass);outline-offset:1px}
+  .login-card button{width:100%}
+  .login-error{min-height:18px;color:var(--spice);font-size:12px;margin:8px 0 0}
 
 </style>
 </head>
@@ -163,17 +171,29 @@
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="login-screen" id="loginScreen" aria-modal="true" role="dialog" aria-labelledby="loginTitle">
+  <form class="login-card" id="loginForm">
+    <h2 id="loginTitle">ShiftLog</h2>
+    <p>Enter the team PIN to continue.</p>
+    <input id="pinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="PIN" aria-label="PIN" required>
+    <button class="brass" id="loginButton" type="submit">Continue</button>
+    <div class="login-error" id="loginError" aria-live="polite"></div>
+  </form>
+</div>
 
 <script>
 // ==== CONFIG ====
 const API_URL = "https://script.google.com/macros/s/AKfycbwUez5XDeFcxEjJOmIaZAVpXabfj3PoPpmonHLrVEIdy8CE7i2YMT6zMyAO0A63GY41zw/exec";
 // ================
+const SESSION_TOKEN_KEY = 'shiftlog.sessionToken';
 
 let staff = [];
 let absentSet = new Set();
 let openBreaks = {};
 let currentFilter = 'all';
 const busy = new Set();
+let refreshPromise = null;
+let sessionToken = sessionStorage.getItem(SESSION_TOKEN_KEY) || '';
 
 function toast(msg){
   const t=document.getElementById('toast');
@@ -193,10 +213,48 @@ async function api(action,params={}){
   const url=new URL(API_URL);
   url.searchParams.set('action',action);
   Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,v));
+  if(action!=='login' && sessionToken)url.searchParams.set('token',sessionToken);
   url.searchParams.set('_ts',Date.now());
   const res=await fetch(url.toString(),{cache:'no-store'});
   if(!res.ok) throw new Error('Network error: '+res.status);
-  return res.json();
+  const data=await res.json();
+  if(data&&data.authRequired){
+    endSession(data.error||'Your session has expired. Please sign in again.');
+    throw new Error(data.error||'Authentication required');
+  }
+  return data;
+}
+function showLogin(message=''){
+  document.getElementById('loginError').textContent=message;
+  document.getElementById('loginScreen').style.display='flex';
+  setTimeout(()=>document.getElementById('pinInput').focus(),0);
+}
+function endSession(message=''){
+  sessionToken='';
+  sessionStorage.removeItem(SESSION_TOKEN_KEY);
+  showLogin(message);
+}
+async function handleLogin(event){
+  event.preventDefault();
+  const input=document.getElementById('pinInput');
+  const button=document.getElementById('loginButton');
+  const error=document.getElementById('loginError');
+  const pin=input.value;
+  if(!pin)return;
+  button.disabled=true; button.textContent='Checking…'; error.textContent='';
+  try{
+    const result=await api('login',{pin});
+    if(!result||!result.token)throw new Error((result&&result.error)||'Unable to sign in');
+    sessionToken=result.token;
+    sessionStorage.setItem(SESSION_TOKEN_KEY,sessionToken);
+    input.value='';
+    document.getElementById('loginScreen').style.display='none';
+    if(!await refreshAll(false))endSession('Unable to load ShiftLog. Please sign in again.');
+  }catch(err){
+    input.value='';
+    error.textContent=err.message||'Unable to sign in';
+    input.focus();
+  }finally{button.disabled=false;button.textContent='Continue';}
 }
 function safeTimeParts(value){
   if(typeof value!=='string') return null;
@@ -242,36 +300,44 @@ function renderStaff(){
     return;
   }
   holder.innerHTML=list.map(name=>{
-    const a=absentSet.has(name), b=!!openBreaks[name], e=escapeAttr(name);
-    const locked=busy.has('break:'+name);
-    const timer=b?`<div class="break-timer">On break · ${fmtDuration(secsSince(openBreaks[name]))}</div>`:'';
+    const a=absentSet.has(name), b=!!openBreaks[name], e=escapeAttr(name), arg=escapeHtml(JSON.stringify(name)), breakStart=escapeAttr(openBreaks[name]||'');
+    const locked=busy.has('break:'+name)||busy.has('absent:'+name)||busy.has('remove:'+name)||busy.has('rename:'+name);
+    const timer=b?`<div class="break-timer" data-break-start="${breakStart}">On break · ${fmtDuration(secsSince(openBreaks[name]))}</div>`:'';
     return `<div class="staff-row ${a?'absent':''} ${b?'onbreak':''}">
       <div class="name-wrap">
-        <input class="staff-name" value="${e}" onchange="handleRename('${e}',this.value)">
+        <input class="staff-name" value="${e}" onchange="handleRename(${arg},this.value)">
         ${timer}
       </div>
-      <button class="btn btn-absent ${a?'active':''}" ${locked?'disabled':''} onclick="handleToggleAway('${e}')">${a?'AWAY':'AWAY'}</button>
-      <button class="btn btn-break ${b?'active':''}" ${locked?'disabled':''} onclick="handleToggleBreak('${e}')">${b?'End break':'Start break'}</button>
-      <button class="btn-remove" onclick="handleRemoveStaff('${e}')" title="Remove">×</button>
+      <button class="btn btn-absent ${a?'active':''}" ${locked?'disabled':''} onclick="handleToggleAway(${arg})">AWAY</button>
+      <button class="btn btn-break ${b?'active':''}" ${locked?'disabled':''} onclick="handleToggleBreak(${arg})">${b?'End break':'Start break'}</button>
+      <button class="btn-remove" ${locked?'disabled':''} onclick="handleRemoveStaff(${arg})" title="Remove">×</button>
     </div>`;
   }).join('');
 }
 async function refreshAll(showError=true){
-  try{
-    const [s,a,b]=await Promise.all([api('getStaff'),api('getAbsent'),api('getOpenBreaks')]);
-    staff=Array.isArray(s)?s:[];
-    absentSet=new Set(Array.isArray(a)?a:[]);
-    openBreaks=(b&&!b.error)?b:{};
-    renderStats(); renderStaff();
-    document.getElementById('lastRefresh').textContent='Updated '+new Date().toLocaleTimeString([],{
-      hour:'2-digit',minute:'2-digit',second:'2-digit'
-    });
-  }catch(err){if(showError)toast(err.message||'Connection error');}
+  if(refreshPromise)return refreshPromise;
+  refreshPromise=(async()=>{
+    try{
+      const [s,a,b]=await Promise.all([api('getStaff'),api('getAbsent'),api('getOpenBreaks')]);
+      staff=Array.isArray(s)?s:[];
+      absentSet=new Set(Array.isArray(a)?a:[]);
+      openBreaks=(b&&!b.error)?b:{};
+      renderStats(); renderStaff();
+      document.getElementById('lastRefresh').textContent='Updated '+new Date().toLocaleTimeString([],{
+        hour:'2-digit',minute:'2-digit',second:'2-digit'
+      });
+      return true;
+    }catch(err){
+      if(showError)toast(err.message||'Connection error');
+      return false;
+    }finally{refreshPromise=null;}
+  })();
+  return refreshPromise;
 }
 async function manualRefresh(){
   const btn=document.getElementById('refreshBtn');
   btn.classList.add('loading'); btn.textContent='…';
-  try{await refreshAll(true);toast('Updated');}
+  try{if(await refreshAll(true))toast('Updated');}
   finally{btn.classList.remove('loading');btn.textContent='↻';}
 }
 async function handleToggleAway(name){
@@ -331,15 +397,27 @@ async function handleRename(oldName,newName){
     renderStats();renderStaff();toast('Renamed to '+newName);
   }catch(e){toast(e.message||'Connection error')}finally{busy.delete(key);}
 }
-function escapeAttr(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function escapeAttr(s){return escapeHtml(s).replace(/'/g,'&#39;');}
+function updateBreakTimers(){
+  document.querySelectorAll('[data-break-start]').forEach(el=>{
+    el.textContent='On break · '+fmtDuration(secsSince(el.dataset.breakStart));
+  });
+}
 
-setInterval(()=>{if(Object.keys(openBreaks).length)renderStaff();},1000);
-setInterval(()=>refreshAll(false),60000);
+setInterval(updateBreakTimers,1000);
+setInterval(()=>{if(sessionToken)refreshAll(false);},60000);
+document.getElementById('loginForm').addEventListener('submit',handleLogin);
 
 if(API_URL.indexOf('PASTE_YOUR')!==-1){
   document.getElementById('configNotice').style.display='block';
 }else{
-  refreshAll();
+  if(sessionToken){
+    document.getElementById('loginScreen').style.display='none';
+    refreshAll(false);
+  }else{
+    showLogin();
+  }
 }
 </script>
 </body>
